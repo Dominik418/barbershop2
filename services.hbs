@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.3.7/css/dataTables.dataTables.css">
+    <link rel="icon" type="image/png" href="/images/favicon.png">
+    <title>Admin Panel - Services</title>
+    <link rel="stylesheet" href="/admin.css">
+    <style>
+        tfoot#newRecordRow { border-top: 2px solid #c79b63; }
+        .new-editable { background-color: rgba(199, 155, 99, 0.05); outline: 1px dashed #c79b63; }
+        .selected-row { background-color: #c79b63 !important; }
+
+        .employee-thumb {
+            width: 50px; height: 50px; object-fit: cover; border-radius: 4px;
+            display: block; margin-bottom: 5px; border: 1px solid #444;
+        }
+        .image-selector {
+            width: 150px;
+            padding: 2px;
+            font-size: 12px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #c79b63;
+        }
+        .table-container { overflow-x: auto; }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <h2>Welcome {{adminName}}</h2>
+            <ul>
+                <li><a href="/login/admin-dashboard">Appointments</a></li>
+                <li><a href="/login/users">Users</a></li>
+                <li><a href="/login/services">Services</a></li>
+                <li><a href="/login/employees">Employees</a></li>
+                <li><a href="/login/admin-works">Portfolios</a></li>
+                <li><a href="/auth/logout" style="color: #ff4d4d;">Logout</a></li>
+            </ul>
+        </aside>
+
+        <main class="main">
+            <header class="topbar"><h1>Services</h1></header>
+
+            <div class="table-container">
+                <table id="myTable" class="display">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Name</th><th>Price</th><th>Duration Minutes</th><th>Picture</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each services}}
+                        <tr>
+                            <td data-label="ID">{{this.id}}</td>
+                            <td class="editable" data-field="name" data-label="Name" contenteditable="true">{{this.name}}</td>
+                            <td class="editable" data-field="price" data-label="Price" contenteditable="true">{{this.price}}$</td>
+                            <td class="editable" data-field="duration_minutes" data-label="Duration Minutes" contenteditable="true">{{this.duration_minutes}} minutes</td>
+                            <td data-label="Pictures">
+                                {{#if this.pictures}}
+                                    <!-- Ha base64 blob: megjelenítés -->
+                                    <img id="thumb-{{this.id}}"
+                                         src="{{this.pictures}}"
+                                         class="employee-thumb"
+                                         onerror="this.src='/images/favicon.png';">
+                                {{else}}
+                                    <img id="thumb-{{this.id}}"
+                                         src="/images/favicon.png"
+                                         class="employee-thumb">
+                                {{/if}}
+                                <!-- A data-current-filename a fájlnév, amit az adatbázisban tárolunk -->
+                                <select class="image-selector" data-field="pictures" data-current="{{this.pictures}}">
+                                    <option value="" hidden>-- Select image --</option>
+                                </select>
+                            </td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                    <tfoot id="newRecordRow" style="display: none;">
+                        <tr>
+                            <td>New</td>
+                            <td class="new-editable" data-field="name" data-label="Name" contenteditable="true"></td>
+                            <td class="new-editable" data-field="price" data-label="Price" contenteditable="true"></td>
+                            <td class="new-editable" data-field="duration_minutes" data-label="Duration Minutes" contenteditable="true"></td>
+                            <td data-label="Pictures">
+                                <img id="thumb-new" src="/images/favicon.png" class="employee-thumb">
+                                <select class="image-selector" data-field="pictures" data-current="">
+                                    <option value="" hidden>-- Select image --</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="button-container" style="margin-top:20px; display:flex; gap:10px;">
+                <button id="addBtn" class="btn" style="background:#28a745;">Add New Service</button>
+                <button id="updateBtn" class="btn">Update Selected</button>
+                <button id="deleteBtn" class="btn" style="background:#ff4d4d;">Delete</button>
+                <button id="saveNewBtn" class="btn" style="display:none; background:#28a745;">Save New</button>
+                <button id="cancelBtn" class="btn" style="display:none;">Cancel</button>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/2.3.7/js/dataTables.js"></script>
+
+    <script>
+        $(document).ready(function () {
+            const table = $('#myTable').DataTable();
+            let selectedId = null;
+
+            // Képek betöltése a /auth/get-images végpontról
+            // A szerver a /public/images mappából adja vissza a fájlneveket
+            function loadImages(callback) {
+                fetch('/auth/get-images').then(res => res.json()).then(data => {
+                    if (!data.success) return;
+
+                    // Minden image-selector dropdown feltöltése
+                    $('.image-selector').each(function () {
+                        const $sel = $(this);
+                        const currentVal = $sel.data('current') || ''; 
+                        // currentVal lehet: '/images/barber1.jpg' vagy üres string
+
+                        data.images.forEach(imgFilename => {
+                            const imgPath = `/images/${imgFilename}`;
+                            const $opt = new Option(imgFilename, imgPath);
+                            // Kijelöljük ha egyezik a jelenlegi értékkel
+                            if (currentVal === imgPath || currentVal === imgFilename) {
+                                $opt.selected = true;
+                            }
+                            $sel.append($opt);
+                        });
+
+                        // Preview frissítése a kiválasztott képre
+                        const $row = $sel.closest('tr');
+                        const rowId = $row.find('td:first-child').text().trim();
+                        const $thumb = rowId ? $(`#thumb-${rowId}`) : $('#thumb-new');
+
+                        if ($sel.val()) {
+                            $thumb.attr('src', $sel.val());
+                        }
+                    });
+
+                    if (callback) callback();
+                });
+            }
+
+            loadImages();
+
+            // Dropdown változásakor preview frissítése
+            $(document).on('change', '.image-selector', function () {
+                const $sel = $(this);
+                const $row = $sel.closest('tr');
+                const rowId = $row.find('td:first-child').text().trim();
+                const $thumb = rowId && rowId !== 'New' ? $(`#thumb-${rowId}`) : $('#thumb-new');
+                const val = $sel.val();
+                $thumb.attr('src', val || '/images/favicon.png');
+            });
+
+            // Sor kijelölése
+            $('#myTable tbody').on('click', 'tr', function () {
+                table.$('tr.selected-row').removeClass('selected-row');
+                $(this).addClass('selected-row');
+                selectedId = $(this).find('td:first-child').text().trim();
+            });
+
+            // UPDATE
+            $('#updateBtn').on('click', function () {
+                if (!selectedId) return alert("Select a row first!");
+                const $row = $('.selected-row');
+                const updateData = { id: selectedId };
+
+                $row.find('.editable').each(function () {
+                    updateData[$(this).data('field')] = $(this).text().trim();
+                });
+
+                // pictures: a dropdown kiválasztott értéke ('/images/filename.jpg')
+                updateData['pictures'] = $row.find('.image-selector').val();
+
+                fetch('/auth/update-record', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ table: 'services', data: updateData })
+                }).then(res => res.json()).then(data => {
+                    if (data.success) {
+                        alert("Update successful!");
+                        location.reload();
+                    } else {
+                        alert("Update failed.");
+                    }
+                });
+            });
+
+            // ÚJ SOR
+            $('#addBtn').on('click', () => {
+                $('#newRecordRow').show();
+                $('#saveNewBtn, #cancelBtn').show();
+                $('#addBtn, #updateBtn, #deleteBtn').hide();
+            });
+
+            $('#cancelBtn').on('click', () => location.reload());
+
+            $('#saveNewBtn').on('click', function () {
+                const newData = {};
+                $('#newRecordRow .new-editable').each(function () {
+                    newData[$(this).data('field')] = $(this).text().trim();
+                });
+                newData['pictures'] = $('#newRecordRow .image-selector').val();
+
+                fetch('/auth/add-record', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ table: 'services', data: newData })
+                }).then(res => res.json()).then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert("Save failed.");
+                    }
+                });
+            });
+
+            // TÖRLÉS
+            $('#deleteBtn').on('click', function () {
+                if (!selectedId || !confirm("Delete this service?")) return;
+                fetch('/auth/delete-record', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ table: 'services', id: selectedId })
+                }).then(() => location.reload());
+            });
+        });
+    </script>
+</body>
+</html>
